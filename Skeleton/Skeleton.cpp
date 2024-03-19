@@ -82,18 +82,19 @@ public:
 	}
 
 	void V() {
-		float ratio = size / 30;
-		projM = { ratio, 0, 0, 0,
+		float ratio = size / (float)30;
+		viewM = { ratio, 0, 0, 0,
 				  0, ratio, 0, 0,
 				  0, 0, ratio, 0,
 				  cam.x, cam.y, cam.z, 1 };
 	}
 
 	void P() {
-		projM = { 1, 0, 0, 0,
-				  0, 1, 0, 0,
-				  0, 0, 1, 0,
-				  0, 0, 0, 1 };
+		float ratio = (float)1 / (float)15;
+		projM = { ratio, 0, 0, 0,
+				  0, ratio, 0, 0,
+				  0, 0, ratio, 0,
+				  0, 0, 0, ratio };
 	}
 
 	void pan(int panvalue) {

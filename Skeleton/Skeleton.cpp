@@ -99,9 +99,9 @@ public:
 	}
 
 	void uploadMx() {
-		mat4 MVP = viewM * projM;
+		mat4 VP = viewM * projM;
 		int location = glGetUniformLocation(gpuProgram.getId(), "MVP");
-		glUniformMatrix4fv(location, 1, GL_TRUE, &projM[0][0]);
+		glUniformMatrix4fv(location, 1, GL_TRUE, &VP[0][0]);
 	}
 
 	vec3 invP(vec3 cursorPos) {
@@ -131,26 +131,36 @@ Camera* camera;
 
 class Curve {
 protected:
-	unsigned int vao, vbo; // vbo[0] -> cps, vbo[1] -> gorbe
+	unsigned int vaoCP, vboCP, vaoSpl, vboSpl;
 	vector<vec3> cps;
 	vector<vec3> curveVertices;
 public:
 	Curve() {
-		glGenVertexArrays(1, &vao);
-		glBindVertexArray(vao);
-
-		glGenBuffers(1, &vbo);
-		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		glGenVertexArrays(1, &vaoCP);
+		glBindVertexArray(vaoCP);
 		glEnableVertexAttribArray(0);
+		glGenBuffers(1, &vboCP);
+		glBindBuffer(GL_ARRAY_BUFFER, vboCP);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+		
+
+		glGenVertexArrays(1, &vaoSpl);
+		glBindVertexArray(vaoSpl);
+		glEnableVertexAttribArray(0);
+		glGenBuffers(1, &vboSpl);
+		glBindBuffer(GL_ARRAY_BUFFER, vboSpl);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
 	}
 
 	void Draw() {
-		glBindBuffer(GL_ARRAY_BUFFER, vbo);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+		glBindVertexArray(vaoSpl);
+		glBindBuffer(GL_ARRAY_BUFFER, vboSpl);
 		glBufferData(GL_ARRAY_BUFFER, curveVertices.size() * sizeof(vec3), &curveVertices[0], GL_DYNAMIC_DRAW);
 		gpuProgram.setUniform(vec3(1.0f, 1.0f, 0.0f), "color");
 		glDrawArrays(GL_LINE_STRIP, 0, curveVertices.size());
 
+		glBindVertexArray(vaoCP);
+		glBindBuffer(GL_ARRAY_BUFFER, vboCP);
 		glBufferData(GL_ARRAY_BUFFER, cps.size() * sizeof(vec3), &cps[0], GL_DYNAMIC_DRAW);
 		gpuProgram.setUniform(vec3(1.0f, 0.0f, 0.0f), "color");
 		glDrawArrays(GL_POINTS, 0, cps.size());
@@ -171,10 +181,40 @@ class Lagrange : public Curve {
 public:
 	Lagrange() : Curve() {}
 
+	void vectorize() {
+		curveVertices.clear();
+		for (float i = 0; i < 1; i += 0.01) {
+			vec3 vtx = r(i);
+			vtx.z = 15;
+			curveVertices.push_back(vtx);
+		}
+	}
+
 	void AddControlPoint(vec3 cp) {
-		float ti = cps.size(); // or something better
+		ts.clear();
+		ts.push_back(0);
+
 		cps.push_back(cp);
-		ts.push_back(ti);
+
+		if (cps.size() <= 1) {
+			return;
+		}
+		else {
+			float fullDist = 0;
+			for (int i = 1; i < cps.size(); i++) {
+				vec3 vector = cps[i] - cps[i - 1];
+				fullDist += length(cps[i] - cps[i - 1]);
+			}
+
+			for (int i = 1; i < cps.size(); i++) {
+				float ithLength = 0;
+				for (int j = 1; j <= i; j++) {
+					ithLength += length(cps[j] - cps[j - 1]);
+				}
+				float knot = ithLength / fullDist;
+				ts.push_back(knot);
+			}
+		}
 		vectorize();
 	}
 
@@ -184,16 +224,6 @@ public:
 			rt = rt + cps[i] * L(i, t);
 		}
 		return rt;
-	}
-
-	void vectorize() {
-		curveVertices.clear();
-		if (!ts.empty()) {
-			cout << ts.front() << " " << ts.back() << endl;
-			for (float i = ts.front(); i <= ts.back(); i += 0.01) {
-				curveVertices.push_back(r(i));
-			}
-		}
 	}
 };
 

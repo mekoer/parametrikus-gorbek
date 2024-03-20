@@ -32,6 +32,7 @@
 // negativ elojellel szamoljak el es ezzel parhuzamosan eljaras is indul velem szemben.
 //=============================================================================================
 #include "framework.h"
+#include "iostream";
 
 using namespace std;
 
@@ -90,15 +91,33 @@ public:
 	}
 
 	void P() {
-		float ratio = (float)1 / (float)15;
+		float ratio = (float)1 / (size/2);
 		projM = { ratio, 0, 0, 0,
 				  0, ratio, 0, 0,
 				  0, 0, ratio, 0,
-				  0, 0, 0, ratio };
+				  0, 0, 0, 1 };
+	}
+
+	void uploadMx() {
+		mat4 MVP = viewM * projM;
+		int location = glGetUniformLocation(gpuProgram.getId(), "MVP");
+		glUniformMatrix4fv(location, 1, GL_TRUE, &projM[0][0]);
+	}
+
+	vec3 invP(vec3 cursorPos) {
+		float ratio = size / 2;
+		mat4 projMinv = { ratio, 0, 0, 0,
+						  0, ratio, 0, 0,
+						  0, 0, ratio, 0,
+						  0, 0, 0, 1 };
+
+		vec4 v4cursorPos(cursorPos.x, cursorPos.y, cursorPos.z, 1);
+		vec4 wCursorPos = v4cursorPos * projMinv;
+		return vec3(wCursorPos.x, wCursorPos.y, wCursorPos.z);
 	}
 
 	void pan(int panvalue) {
-		cam.y += panvalue;
+		cam.x += panvalue;
 		V();
 	}
 
@@ -108,42 +127,37 @@ public:
 	}
 };
 
+Camera* camera;
+
 class Curve {
-	unsigned int vao, vbo[2]; // vbo[0] -> cps, vbo[1] -> gorbe
 protected:
+	unsigned int vao, vbo; // vbo[0] -> cps, vbo[1] -> gorbe
 	vector<vec3> cps;
+	vector<vec3> curveVertices;
 public:
 	Curve() {
 		glGenVertexArrays(1, &vao);
 		glBindVertexArray(vao);
 
-		glGenBuffers(2, vbo);
-
+		glGenBuffers(1, &vbo);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
 		glEnableVertexAttribArray(0);
-
-		glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
-
-		glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
 	}
 
-	void updateGPU(int vboid) {
-		glBindVertexArray(vao);
-		glBindBuffer(GL_ARRAY_BUFFER, vbo[vboid]);
+	void Draw() {
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+		glBufferData(GL_ARRAY_BUFFER, curveVertices.size() * sizeof(vec3), &curveVertices[0], GL_DYNAMIC_DRAW);
+		gpuProgram.setUniform(vec3(1.0f, 1.0f, 0.0f), "color");
+		glDrawArrays(GL_LINE_STRIP, 0, curveVertices.size());
+
 		glBufferData(GL_ARRAY_BUFFER, cps.size() * sizeof(vec3), &cps[0], GL_DYNAMIC_DRAW);
-	}
-
-	void Draw(int type, vec3 color) {
-		if (cps.size() > 0) {
-			glBindVertexArray(vao);
-			gpuProgram.setUniform(color, "color");
-			glDrawArrays(type, 0, cps.size());
-		}
+		gpuProgram.setUniform(vec3(1.0f, 0.0f, 0.0f), "color");
+		glDrawArrays(GL_POINTS, 0, cps.size());
 	}
 };
 
-class Lagrange : Curve {
+class Lagrange : public Curve {
 	vector<float> ts; // knots
 
 	float L(int i, float t) {
@@ -161,6 +175,7 @@ public:
 		float ti = cps.size(); // or something better
 		cps.push_back(cp);
 		ts.push_back(ti);
+		vectorize();
 	}
 
 	vec3 r(float t) {
@@ -171,10 +186,19 @@ public:
 		return rt;
 	}
 
+	void vectorize() {
+		curveVertices.clear();
+		if (!ts.empty()) {
+			cout << ts.front() << " " << ts.back() << endl;
+			for (float i = ts.front(); i <= ts.back(); i += 0.01) {
+				curveVertices.push_back(r(i));
+			}
+		}
+	}
 };
 
-class Bezier : Curve {
-	vector<vec3> cps; // control pts
+class Bezier : public Curve {
+	//vector<vec3> cps; // control pts
 	float B(int i, float t) {
 		int n = cps.size() - 1; // n+1 pts!
 		float choose = 1;
@@ -182,9 +206,11 @@ class Bezier : Curve {
 		return choose * pow(t, i) * pow(1 - t, n - i);
 	}
 public:
+	Bezier() : Curve() {}
 	void AddControlPoint(vec3 cp) {
 		cps.push_back(cp);
 	}
+
 	vec3 r(float t) {
 		vec3 rt(0, 0, 0);
 		for (int i = 0; i < cps.size(); i++) {
@@ -192,7 +218,6 @@ public:
 		}
 		return rt;
 	}
-
 };
 
 class CatmullRom : Curve {
@@ -200,14 +225,18 @@ class CatmullRom : Curve {
 };
 
 Lagrange* lagrange;
-
+Bezier* bezier;
 
 
 // Initialization, create an OpenGL context
 void onInitialization() {
 	glViewport(0, 0, windowWidth, windowHeight);
 
-	lagrange = new Lagrange;
+	glLineWidth(2);
+	glPointSize(10);
+
+	camera = new Camera();
+	lagrange = new Lagrange();
 
 	// create program for the GPU
 	gpuProgram.create(vertexSource, fragmentSource, "outColor");
@@ -218,19 +247,11 @@ void onDisplay() {
 	glClearColor(0, 0, 0, 0);     // background color
 	glClear(GL_COLOR_BUFFER_BIT); // clear frame buffer
 
-	// Set color to (0, 1, 0) = green
-	int location = glGetUniformLocation(gpuProgram.getId(), "color");
-	glUniform3f(location, 0.0f, 1.0f, 0.0f); // 3 floats
+	camera->V(); camera->P();
+	camera->uploadMx();
 
-	float MVPtransf[4][4] = { 1, 0, 0, 0,    // MVP matrix, 
-							  0, 1, 0, 0,    // row-major!
-							  0, 0, 1, 0,
-							  0, 0, 0, 1 };
-
-	location = glGetUniformLocation(gpuProgram.getId(), "MVP");	// Get the GPU location of uniform variable MVP
-	glUniformMatrix4fv(location, 1, GL_TRUE, &MVPtransf[0][0]);	// Load a 4x4 row-major float matrix to the specified location
-
-	//lagrange->Draw();
+	lagrange->Draw();
+	//bezier->Draw();
 
 	glutSwapBuffers(); // exchange buffers for double buffering
 }
@@ -275,14 +296,27 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 		case IDLE:
 			break;
 		case LAGRANGE:
-
+			if (button == GLUT_LEFT_BUTTON) {
+				cout << "left" << endl;
+				vec3 wPos = camera->invP(vec3(cX, cY, 1));
+				lagrange->AddControlPoint(wPos);
+				glutPostRedisplay();
+			}
 			break;
 		case BEZIER:
+			if (button == GLUT_LEFT_BUTTON) {
+				cout << "left" << endl;
+				vec3 wPos = camera->invP(vec3(cX, cY, 1));
+				bezier->AddControlPoint(wPos);
+				glutPostRedisplay();
+			}
 			break;
 		case CATMULLROM:
 			break;
 		}
 	}
+
+	
 
 	/*switch (button) {
 	case GLUT_LEFT_BUTTON:   printf("Left button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY);   break;

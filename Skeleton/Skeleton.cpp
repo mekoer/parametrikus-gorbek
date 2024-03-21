@@ -32,7 +32,7 @@
 // negativ elojellel szamoljak el es ezzel parhuzamosan eljaras is indul velem szemben.
 //=============================================================================================
 #include "framework.h"
-#include "iostream";
+#include "iostream"
 
 using namespace std;
 
@@ -64,14 +64,19 @@ const char * const fragmentSource = R"(
 
 GPUProgram gpuProgram; // vertex and fragment shaders
 
-enum State {
-	IDLE,
+enum CurveMode {
 	LAGRANGE,
 	BEZIER,
 	CATMULLROM
 };
 
-State mode = IDLE;
+CurveMode curveMode = LAGRANGE;
+
+enum MoveMode {
+	ENABLED, DISABLED
+};
+
+MoveMode moveMode = DISABLED;
 
 class Camera {
 	vec3 cam;
@@ -134,6 +139,7 @@ protected:
 	unsigned int vaoCP, vboCP, vaoSpl, vboSpl;
 	vector<vec3> cps;
 	vector<vec3> curveVertices;
+	vec3* selectedPoint;
 public:
 	Curve() {
 		glGenVertexArrays(1, &vaoCP);
@@ -150,6 +156,37 @@ public:
 		glGenBuffers(1, &vboSpl);
 		glBindBuffer(GL_ARRAY_BUFFER, vboSpl);
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+
+		selectedPoint = nullptr;
+	}
+
+	void selectPoint(vec3 cursor) {
+		for (vec3& vertex : cps) {
+			if (fabs(length(cursor - vertex)) <= 0.15) {
+				selectedPoint = &vertex;
+			}
+		}
+	}
+
+	void deselectCP() {
+		selectedPoint = nullptr;
+	}
+
+	void moveCP(vec3 cursor) {
+		if (selectedPoint != nullptr) {
+			cout << "selected" << endl;
+			selectedPoint->x = cursor.x;
+			selectedPoint->y = cursor.y;
+			selectedPoint->z = cursor.z;
+			vectorize();
+		}
+	}
+
+	virtual void vectorize() {}
+	virtual void AddControlPoint(vec3 cp) {}
+
+	void del() {
+		cps.clear(); curveVertices.clear(); selectedPoint = nullptr;
 	}
 
 	void Draw() {
@@ -166,6 +203,7 @@ public:
 		glDrawArrays(GL_POINTS, 0, cps.size());
 	}
 };
+Curve* curve;
 
 class Lagrange : public Curve {
 	vector<float> ts; // knots
@@ -181,7 +219,7 @@ class Lagrange : public Curve {
 public:
 	Lagrange() : Curve() {}
 
-	void vectorize() {
+	void vectorize() override {
 		curveVertices.clear();
 		for (float i = 0; i < 1; i += 0.01) {
 			vec3 vtx = r(i);
@@ -190,7 +228,7 @@ public:
 		}
 	}
 
-	void AddControlPoint(vec3 cp) {
+	void AddControlPoint(vec3 cp) override {
 		ts.clear();
 		ts.push_back(0);
 
@@ -228,7 +266,6 @@ public:
 };
 
 class Bezier : public Curve {
-	//vector<vec3> cps; // control pts
 	float B(int i, float t) {
 		int n = cps.size() - 1; // n+1 pts!
 		float choose = 1;
@@ -239,6 +276,7 @@ public:
 	Bezier() : Curve() {}
 	void AddControlPoint(vec3 cp) {
 		cps.push_back(cp);
+		vectorize();
 	}
 
 	vec3 r(float t) {
@@ -247,6 +285,15 @@ public:
 			rt = rt + (cps[i] * B(i, t));
 		}
 		return rt;
+	}
+
+	void vectorize() override {
+		curveVertices.clear();
+		for (float i = 0; i < 1; i += 0.01) {
+			vec3 vtx = r(i);
+			vtx.z = 15;
+			curveVertices.push_back(vtx);
+		}
 	}
 };
 
@@ -265,8 +312,10 @@ void onInitialization() {
 	glLineWidth(2);
 	glPointSize(10);
 
+	curve = new Curve();
 	camera = new Camera();
 	lagrange = new Lagrange();
+	bezier = new Bezier();
 
 	// create program for the GPU
 	gpuProgram.create(vertexSource, fragmentSource, "outColor");
@@ -280,8 +329,7 @@ void onDisplay() {
 	camera->V(); camera->P();
 	camera->uploadMx();
 
-	lagrange->Draw();
-	//bezier->Draw();
+	curve->Draw();
 
 	glutSwapBuffers(); // exchange buffers for double buffering
 }
@@ -291,13 +339,21 @@ void onKeyboard(unsigned char key, int pX, int pY) {
 	switch (key)
 	{
 	case 'l':
-		mode = LAGRANGE;
+		curve->del();
+		curve = lagrange;
+		glutPostRedisplay();
+		
+		curveMode = LAGRANGE;
 		break;
 	case 'b':
-		mode = BEZIER;
+		curve->del();
+		curve = bezier;
+		glutPostRedisplay();
+		
+		curveMode = BEZIER;
 		break;
 	case 'c':
-		mode = CATMULLROM;
+		curveMode = CATMULLROM;
 		break;
 	}
 }
@@ -311,7 +367,11 @@ void onMouseMotion(int pX, int pY) {	// pX, pY are the pixel coordinates of the 
 	// Convert to normalized device space
 	float cX = 2.0f * pX / windowWidth - 1;	// flip y axis
 	float cY = 1.0f - 2.0f * pY / windowHeight;
-	printf("Mouse moved to (%3.2f, %3.2f)\n", cX, cY);
+
+	if (moveMode == ENABLED) {
+		curve->moveCP(camera->invP(vec3(cX, cY, 1)));
+		glutPostRedisplay();
+	}
 }
 
 // Mouse click event
@@ -320,30 +380,34 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 	float cX = 2.0f * pX / windowWidth - 1;	// flip y axis
 	float cY = 1.0f - 2.0f * pY / windowHeight;
 
-	if (state == GLUT_DOWN) {
-		switch (mode)
+	if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+		switch (curveMode)
 		{
-		case IDLE:
-			break;
 		case LAGRANGE:
 			if (button == GLUT_LEFT_BUTTON) {
-				cout << "left" << endl;
-				vec3 wPos = camera->invP(vec3(cX, cY, 1));
-				lagrange->AddControlPoint(wPos);
+				lagrange->AddControlPoint(camera->invP(vec3(cX, cY, 1)));
 				glutPostRedisplay();
 			}
 			break;
 		case BEZIER:
 			if (button == GLUT_LEFT_BUTTON) {
-				cout << "left" << endl;
-				vec3 wPos = camera->invP(vec3(cX, cY, 1));
-				bezier->AddControlPoint(wPos);
+				bezier->AddControlPoint(camera->invP(vec3(cX, cY, 1)));
 				glutPostRedisplay();
 			}
 			break;
 		case CATMULLROM:
 			break;
 		}
+	}
+	if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
+		cout << moveMode << endl;
+		curve->selectPoint(camera->invP(vec3(cX, cY, 1)));
+		moveMode = ENABLED;
+	}
+	if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP) {
+		cout << moveMode << endl;
+		curve->deselectCP();
+		moveMode = DISABLED;
 	}
 
 	

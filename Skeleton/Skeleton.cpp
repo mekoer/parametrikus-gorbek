@@ -174,7 +174,6 @@ public:
 
 	void moveCP(vec3 cursor) {
 		if (selectedPoint != nullptr) {
-			cout << "selected" << endl;
 			selectedPoint->x = cursor.x;
 			selectedPoint->y = cursor.y;
 			selectedPoint->z = cursor.z;
@@ -182,7 +181,17 @@ public:
 		}
 	}
 
-	virtual void vectorize() {}
+	virtual vec3 r(float t);
+
+	void vectorize() {
+		curveVertices.clear();
+		for (float i = 0; i < 1; i += 0.01f) {
+			vec3 vtx = r(i);
+			vtx.z = 15;
+			curveVertices.push_back(vtx);
+		}
+	}
+
 	virtual void AddControlPoint(vec3 cp) {}
 
 	void del() {
@@ -219,15 +228,6 @@ class Lagrange : public Curve {
 public:
 	Lagrange() : Curve() {}
 
-	void vectorize() override {
-		curveVertices.clear();
-		for (float i = 0; i < 1; i += 0.01) {
-			vec3 vtx = r(i);
-			vtx.z = 15;
-			curveVertices.push_back(vtx);
-		}
-	}
-
 	void AddControlPoint(vec3 cp) override {
 		ts.clear();
 		ts.push_back(0);
@@ -256,7 +256,7 @@ public:
 		vectorize();
 	}
 
-	vec3 r(float t) {
+	vec3 r(float t) override {
 		vec3 rt(0, 0, 0);
 		for (int i = 0; i < cps.size(); i++) {
 			rt = rt + cps[i] * L(i, t);
@@ -279,30 +279,114 @@ public:
 		vectorize();
 	}
 
-	vec3 r(float t) {
+	vec3 r(float t) override {
 		vec3 rt(0, 0, 0);
 		for (int i = 0; i < cps.size(); i++) {
 			rt = rt + (cps[i] * B(i, t));
 		}
 		return rt;
 	}
+};
 
-	void vectorize() override {
-		curveVertices.clear();
-		for (float i = 0; i < 1; i += 0.01) {
-			vec3 vtx = r(i);
-			vtx.z = 15;
-			curveVertices.push_back(vtx);
+class CatmullRom : public Curve {
+	vector<float> ts; // parameter (knot) values
+	vec3 Hermite(vec3 p0, vec3 v0, float t0, vec3 p1, vec3 v1, float t1, float t) {
+		float deltat = t1 - t0;
+		vec3 a0 = p0;
+		vec3 a1 = v0;
+		vec3 a2 = ((3 * (p1 - p0)) / (pow(deltat, 2))) - ((v1 + 2 * v0) / deltat);
+		vec3 a3 = ((2 * (p0 - p1)) / (pow(deltat, 3))) + (v1 + v0) / (pow(deltat, 2));
+		deltat = t - t0;
+		return (a3 * pow(deltat, 3)) + (a2 * pow(deltat, 2)) + (a1 * deltat) + a0;
+	}public:	void AddControlPoint(vec3 cp) override {
+		ts.clear();
+		ts.push_back(0);
+
+		cps.push_back(cp);
+
+		if (cps.size() <= 1) {
+			return;
+		}
+		else {
+			float fullDist = 0;
+			for (int i = 1; i < cps.size(); i++) {
+				vec3 vector = cps[i] - cps[i - 1];
+				fullDist += length(cps[i] - cps[i - 1]);
+			}
+
+			for (int i = 1; i < cps.size(); i++) {
+				float ithLength = 0;
+				for (int j = 1; j <= i; j++) {
+					ithLength += length(cps[j] - cps[j - 1]);
+				}
+				float knot = ithLength / fullDist;
+				ts.push_back(knot);
+			}
+		}
+		vectorize();
+	}	vec3 firstPoint(int i) {		return (cps[i + 1] - cps[i]) / (ts[i + 1] - ts[i]);	}	vec3 lastPoint(int i) {		return (cps[i] - cps[i - 1]) / (ts[i] - ts[i - 1]);	}	vec3 middlePoint(int i) {		return 0.5f * ((cps[i + 1] - cps[i]) / (ts[i + 1] - ts[i]) + (cps[i] - cps[i - 1]) / (ts[i] - ts[i - 1]));	}
+	vec3 r(float t) override {
+		for (int i = 0; i < cps.size() - 1; i++) {
+			if (ts[i] <= t && t <= ts[i + 1]) {
+				vec3 v0, v1;
+				if (cps.size() > 3) {
+					if (i >= 1 && i <= cps.size() - 3) {
+						v0 = middlePoint(i);
+						v1 = middlePoint(i + 1);
+						cout << "kozepsopont size>3: ";
+						cout << v0.x << " " << v0.y << " " << v0.z << "    ";
+						cout << v1.x << " " << v1.y << " " << v1.z << endl;
+					}
+					else if (i < 1) {
+						v0 = firstPoint(i);
+						v1 = middlePoint(i + 1);
+						cout << "elsopont size>3: ";
+						cout << v0.x << " " << v0.y << " " << v0.z << "	";
+						cout << v1.x << " " << v1.y << " " << v1.z << endl;
+					}
+					else if (i > cps.size() - 3) {
+						v0 = middlePoint(i);
+						v1 = lastPoint(i + 1);
+						cout << "utsopont size>3: ";
+						cout << v0.x << " " << v0.y << " " << v0.z << "	";
+						cout << v1.x << " " << v1.y << " " << v1.z << endl;
+					}
+				}
+				else if (cps.size() == 3) {
+					if (i == 0) {
+						v0 = firstPoint(i);
+						v1 = middlePoint(i + 1);
+						cout << "size=3 i0: ";
+						cout << v0.x << " " << v0.y << " " << v0.z << "	";
+						cout << v1.x << " " << v1.y << " " << v1.z << endl;
+					}
+					else if (i == 1) {
+						v0 = middlePoint(i);
+						v1 = lastPoint(i + 1);
+						cout << "size=3 i1: ";
+						cout << v0.x << " " << v0.y << " " << v0.z << "	";
+						cout << v1.x << " " << v1.y << " " << v1.z << endl;
+					}
+				}
+				else if (cps.size() == 2) {
+					cout << "size=2: ";
+					v0 = firstPoint(i);
+					v1 = lastPoint(i + 1);
+					cout << v0.x << " " << v0.y << " " << v0.z << "	";
+					cout << v1.x << " " << v1.y << " " << v1.z << endl;
+				}
+				return Hermite(cps[i], v0, ts[i], cps[i + 1], v1, ts[i + 1], t);
+				//cout << v0.x << " " << v0.y << " " << v0.z << "	";
+				//cout << v1.x << " " << v1.y << " " << v1.z << endl;
+				
+			}
 		}
 	}
 };
 
-class CatmullRom : Curve {
-
-};
-
 Lagrange* lagrange;
 Bezier* bezier;
+CatmullRom* catmullrom;
 
 
 // Initialization, create an OpenGL context
@@ -316,6 +400,12 @@ void onInitialization() {
 	camera = new Camera();
 	lagrange = new Lagrange();
 	bezier = new Bezier();
+	catmullrom = new CatmullRom();
+
+	curve = catmullrom;
+	curve->AddControlPoint(vec3(-5, 10, 15));
+	curve->AddControlPoint(vec3(0, 8, 15));
+	curve->AddControlPoint(vec3(5, 5, 15));
 
 	// create program for the GPU
 	gpuProgram.create(vertexSource, fragmentSource, "outColor");
@@ -342,17 +432,18 @@ void onKeyboard(unsigned char key, int pX, int pY) {
 		curve->del();
 		curve = lagrange;
 		glutPostRedisplay();
-		
 		curveMode = LAGRANGE;
 		break;
 	case 'b':
 		curve->del();
 		curve = bezier;
 		glutPostRedisplay();
-		
 		curveMode = BEZIER;
 		break;
 	case 'c':
+		curve->del();
+		curve = catmullrom;
+		glutPostRedisplay();
 		curveMode = CATMULLROM;
 		break;
 	}
@@ -396,30 +487,29 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 			}
 			break;
 		case CATMULLROM:
+			if (button == GLUT_LEFT_BUTTON) {
+				catmullrom->AddControlPoint(camera->invP(vec3(cX, cY, 1)));
+				glutPostRedisplay();
+			}
 			break;
 		}
 	}
 	if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
-		cout << moveMode << endl;
 		curve->selectPoint(camera->invP(vec3(cX, cY, 1)));
 		moveMode = ENABLED;
 	}
 	if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP) {
-		cout << moveMode << endl;
 		curve->deselectCP();
 		moveMode = DISABLED;
 	}
-
-	
-
-	/*switch (button) {
-	case GLUT_LEFT_BUTTON:   printf("Left button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY);   break;
-	case GLUT_MIDDLE_BUTTON: printf("Middle button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY); break;
-	case GLUT_RIGHT_BUTTON:  printf("Right button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY);  break;
-	}*/
 }
 
 // Idle event indicating that some time elapsed: do animation here
 void onIdle() {
 	long time = glutGet(GLUT_ELAPSED_TIME); // elapsed time since the start of the program
+}
+
+vec3 Curve::r(float t)
+{
+	return vec3();
 }

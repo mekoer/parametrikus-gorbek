@@ -41,11 +41,11 @@ const char * const vertexSource = R"(
 	#version 330				// Shader 3.3
 	precision highp float;		// normal floats, makes no difference on desktop computers
 
-	uniform mat4 MVP;			// uniform variable, the Model-View-Projection transformation matrix
+	uniform mat4 VP;			// uniform variable, the Model-View-Projection transformation matrix
 	layout(location = 0) in vec3 cp;	// Varying input: vp = control point is expected in attrib array 0
 
 	void main() {
-		gl_Position = vec4(cp.x, cp.y, cp.z, 1) * MVP;		// transform vp from modeling space to normalized device space
+		gl_Position = vec4(cp.x, cp.y, cp.z, 1) * VP;		// transform vp from modeling space to normalized device space
 	}
 )";
 
@@ -91,8 +91,9 @@ public:
 		float ratio = size / (float)30;
 		viewM = { ratio, 0, 0, 0,
 				  0, ratio, 0, 0,
-				  0, 0, ratio, 0,
+				  0, 0, 1, 0,
 				  cam.x, cam.y, cam.z, 1 };
+		//cout << viewM[0][0] << " " << viewM[1][1] << " " << viewM[2][2] << endl;
 	}
 
 	void P() {
@@ -105,7 +106,7 @@ public:
 
 	void uploadMx() {
 		mat4 VP = viewM * projM;
-		int location = glGetUniformLocation(gpuProgram.getId(), "MVP");
+		int location = glGetUniformLocation(gpuProgram.getId(), "VP");
 		glUniformMatrix4fv(location, 1, GL_TRUE, &VP[0][0]);
 	}
 
@@ -123,12 +124,15 @@ public:
 
 	void pan(int panvalue) {
 		cam.x += panvalue;
-		V();
+		cout << cam.x << endl;
+		V(); uploadMx();
 	}
 
-	void zoom(int zoomvalue) {
-		size *= zoomvalue;
-		V();
+	void zoom(float zoomvalue) {
+		//cout << "ogsize: " << size << " zoomvalue: " << zoomvalue << endl;
+		size = size * zoomvalue;
+		//cout << size << endl;
+		V(); uploadMx();
 	}
 };
 
@@ -190,6 +194,7 @@ public:
 			vtx.z = 15;
 			curveVertices.push_back(vtx);
 		}
+		glutPostRedisplay();
 	}
 
 	virtual void AddControlPoint(vec3 cp) {}
@@ -197,6 +202,8 @@ public:
 	void del() {
 		cps.clear(); curveVertices.clear(); selectedPoint = nullptr;
 	}
+
+	virtual void setTension(float tau) {	}
 
 	void Draw() {
 		glBindVertexArray(vaoSpl);
@@ -212,7 +219,6 @@ public:
 		glDrawArrays(GL_POINTS, 0, cps.size());
 	}
 };
-Curve* curve;
 
 class Lagrange : public Curve {
 	vector<float> ts; // knots
@@ -289,7 +295,9 @@ public:
 };
 
 class CatmullRom : public Curve {
-	vector<float> ts; // parameter (knot) values
+	vector<float> ts;
+	float tension = 0;
+
 	vec3 Hermite(vec3 p0, vec3 v0, float t0, vec3 p1, vec3 v1, float t1, float t) {
 		float deltat = t1 - t0;
 		vec3 a0 = p0;
@@ -324,7 +332,7 @@ class CatmullRom : public Curve {
 			}
 		}
 		vectorize();
-	}	vec3 firstPoint(int i) {		return (cps[i + 1] - cps[i]) / (ts[i + 1] - ts[i]);	}	vec3 lastPoint(int i) {		return (cps[i] - cps[i - 1]) / (ts[i] - ts[i - 1]);	}	vec3 middlePoint(int i) {		return 0.5f * ((cps[i + 1] - cps[i]) / (ts[i + 1] - ts[i]) + (cps[i] - cps[i - 1]) / (ts[i] - ts[i - 1]));	}
+	}	vec3 firstPoint(int i) {		return (cps[i + 1] - cps[i]) / (ts[i + 1] - ts[i]);	}	vec3 lastPoint(int i) {		return (cps[i] - cps[i - 1]) / (ts[i] - ts[i - 1]);	}	vec3 middlePoint(int i) {		return ((1-tension)/2)			 * ((cps[i + 1] - cps[i]) / (ts[i + 1] - ts[i]) 			 + (cps[i] - cps[i - 1]) / (ts[i] - ts[i - 1]));	}
 	vec3 r(float t) override {
 		for (int i = 0; i < cps.size() - 1; i++) {
 			if (ts[i] <= t && t <= ts[i + 1]) {
@@ -333,57 +341,42 @@ class CatmullRom : public Curve {
 					if (i >= 1 && i <= cps.size() - 3) {
 						v0 = middlePoint(i);
 						v1 = middlePoint(i + 1);
-						cout << "kozepsopont size>3: ";
-						cout << v0.x << " " << v0.y << " " << v0.z << "    ";
-						cout << v1.x << " " << v1.y << " " << v1.z << endl;
 					}
 					else if (i < 1) {
 						v0 = firstPoint(i);
 						v1 = middlePoint(i + 1);
-						cout << "elsopont size>3: ";
-						cout << v0.x << " " << v0.y << " " << v0.z << "	";
-						cout << v1.x << " " << v1.y << " " << v1.z << endl;
 					}
 					else if (i > cps.size() - 3) {
 						v0 = middlePoint(i);
 						v1 = lastPoint(i + 1);
-						cout << "utsopont size>3: ";
-						cout << v0.x << " " << v0.y << " " << v0.z << "	";
-						cout << v1.x << " " << v1.y << " " << v1.z << endl;
 					}
 				}
 				else if (cps.size() == 3) {
 					if (i == 0) {
 						v0 = firstPoint(i);
 						v1 = middlePoint(i + 1);
-						cout << "size=3 i0: ";
-						cout << v0.x << " " << v0.y << " " << v0.z << "	";
-						cout << v1.x << " " << v1.y << " " << v1.z << endl;
 					}
 					else if (i == 1) {
 						v0 = middlePoint(i);
 						v1 = lastPoint(i + 1);
-						cout << "size=3 i1: ";
-						cout << v0.x << " " << v0.y << " " << v0.z << "	";
-						cout << v1.x << " " << v1.y << " " << v1.z << endl;
 					}
 				}
 				else if (cps.size() == 2) {
-					cout << "size=2: ";
 					v0 = firstPoint(i);
 					v1 = lastPoint(i + 1);
-					cout << v0.x << " " << v0.y << " " << v0.z << "	";
-					cout << v1.x << " " << v1.y << " " << v1.z << endl;
 				}
 				return Hermite(cps[i], v0, ts[i], cps[i + 1], v1, ts[i + 1], t);
-				//cout << v0.x << " " << v0.y << " " << v0.z << "	";
-				//cout << v1.x << " " << v1.y << " " << v1.z << endl;
-				
 			}
 		}
 	}
+
+	void setTension(float tau) override {
+		tension += tau;
+		vectorize();
+	}
 };
 
+Curve* curve;
 Lagrange* lagrange;
 Bezier* bezier;
 CatmullRom* catmullrom;
@@ -405,7 +398,8 @@ void onInitialization() {
 	curve = catmullrom;
 	curve->AddControlPoint(vec3(-5, 10, 15));
 	curve->AddControlPoint(vec3(0, 8, 15));
-	curve->AddControlPoint(vec3(5, 5, 15));
+	curve->AddControlPoint(vec3(5, 0, 15));
+	curve->AddControlPoint(vec3(-5, -5, 15));
 
 	// create program for the GPU
 	gpuProgram.create(vertexSource, fragmentSource, "outColor");
@@ -413,15 +407,15 @@ void onInitialization() {
 
 // Window has become invalid: Redraw
 void onDisplay() {
-	glClearColor(0, 0, 0, 0);     // background color
-	glClear(GL_COLOR_BUFFER_BIT); // clear frame buffer
+	glClearColor(0, 0, 0, 1);
+	glClear(GL_COLOR_BUFFER_BIT);
 
 	camera->V(); camera->P();
 	camera->uploadMx();
 
 	curve->Draw();
 
-	glutSwapBuffers(); // exchange buffers for double buffering
+	glutSwapBuffers();
 }
 
 // Key of ASCII code pressed
@@ -445,6 +439,32 @@ void onKeyboard(unsigned char key, int pX, int pY) {
 		curve = catmullrom;
 		glutPostRedisplay();
 		curveMode = CATMULLROM;
+		break;
+	case 't':
+		if (curveMode == CATMULLROM) {
+			curve->setTension(-0.1f);
+		}
+		break;
+	case 'T':
+		if (curveMode == CATMULLROM) {
+			curve->setTension(0.1f);
+		}
+		break;
+	case 'z':
+		camera->zoom(1.0f / 1.1f);
+		glutPostRedisplay();
+		break;
+	case 'Z':
+		camera->zoom(1.1f);
+		glutPostRedisplay();
+		break;
+	case 'p':
+		camera->pan(1);
+		glutPostRedisplay();
+		break;
+	case 'P':
+		camera->pan(-1);
+		glutPostRedisplay();
 		break;
 	}
 }

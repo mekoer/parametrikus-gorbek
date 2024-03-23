@@ -80,73 +80,73 @@ MoveMode moveMode = DISABLED;
 
 class Camera {
 	vec3 cam;
-	float size = 30;
+	float wsize;
 	mat4 viewM, projM;
+	mat4 invVP;
+
 public:
 	Camera() {
 		cam = vec3(0, 0, 0);
+		wsize = 30.0f;
 	}
 
 	void V() {
-		float ratio = size / 30.0f;
+		float ratio = wsize / 30.0f;
 		viewM = { ratio, 0, 0, 0,
 				  0, ratio, 0, 0,
 				  0, 0, 1, 0,
 				  cam.x, 0, 0, 1 };
-		//cout << viewM[0][0] << " " << viewM[1][1] << " " << viewM[2][2] << endl;
+		refreshVPinv();
 	}
 
 	void P() {
-		float ratio = (float)1 / (size/2);
+		float ratio = 2.0f / 30.0f;
 		projM = { ratio, 0, 0, 0,
 				  0, ratio, 0, 0,
-				  0, 0, ratio, 0,
+				  0, 0, 1, 0,
 				  0, 0, 0, 1 };
+		refreshVPinv();
 	}
 
-	void uploadMx() {
+	void uploadMx() const {
 		mat4 VP = viewM * projM;
 		int location = glGetUniformLocation(gpuProgram.getId(), "VP");
 		glUniformMatrix4fv(location, 1, GL_TRUE, &VP[0][0]);
 	}
 
-	vec3 invP(vec3 cursorPos) {
-		float ratio = size / 2;
-		mat4 projMinv = { ratio, 0, 0, 0,
-						  0, ratio, 0, 0,
-						  0, 0, ratio, 0,
-						  0, 0, 0, 1 };
+	void refreshVPinv() {
+		float pRatio = 30.0f / 2.0f;
+		mat4 invP = { pRatio, 0, 0, 0,
+					  0, pRatio, 0, 0,
+					  0, 0, 1, 0,
+					  0, 0, 0, 1
+		};
 
-		vec4 v4cursorPos(cursorPos.x, cursorPos.y, cursorPos.z, 1);
-		vec4 wCursorPos = v4cursorPos * projMinv;
-		return vec3(wCursorPos.x, wCursorPos.y, wCursorPos.z);
+		float vRatio = 30.0f / wsize;
+		mat4 invV = { vRatio, 0, 0, 0,
+					  0, vRatio, 0, 0,
+					  0, 0, 1, 0,
+					  -1*cam.x, 0, 0, 1
+		};
+
+		invVP = invP * invV;
 	}
 
-	vec3 inverseVP(vec3 cursorpos) {
-		float pRatio = size / 2;
-		mat4 projMinv = { pRatio, 0, 0, 0,
-						  0, pRatio, 0, 0,
-						  0, 0, pRatio, 0,
-						  0, 0, 0, 1 };
-
-		float vRatio = 30.0f / size;
-		mat4 viewMinv = { vRatio, 0, 0, 0,
-						 0, vRatio, 0, 0,
-						 0, 0, vRatio, 0,
-						 0, 0, 0, 0 }; // ezt kiszamolni
+	vec3 inverseVP(vec3 cursorpos) const {
+		vec4 wC = vec4(cursorpos.x, cursorpos.y, cursorpos.z, 1) * invVP;
+		return vec3(wC.x, wC.y, wC.z);
 	}
 
 	void pan(int panvalue) {
 		cam.x += panvalue;
-		//cout << cam.x << endl;
-		V(); uploadMx();
+		V(); P(); uploadMx();
 	}
 
 	void zoom(float zoomvalue) {
-		//cout << "ogsize: " << size << " zoomvalue: " << zoomvalue << endl;
-		size = size * zoomvalue;
-		//cout << size << endl;
-		V(); uploadMx();
+		wsize *= zoomvalue;
+		V(); 
+		P(); 
+		uploadMx();
 	}
 };
 
@@ -205,19 +205,19 @@ public:
 		curveVertices.clear();
 		for (float i = 0; i < 1; i += 0.01f) {
 			vec3 vtx = r(i);
-			vtx.z = 15;
+			vtx.z = 1;
 			curveVertices.push_back(vtx);
 		}
 		glutPostRedisplay();
 	}
 
-	virtual void AddControlPoint(vec3 cp) {}
+	virtual void AddControlPoint(vec3 cp) { return; }
 
 	void del() {
 		cps.clear(); curveVertices.clear(); selectedPoint = nullptr;
 	}
 
-	virtual void setTension(float tau) {	}
+	virtual void setTension(float tau) { return; }
 
 	void Draw() {
 		glBindVertexArray(vaoSpl);
@@ -345,6 +345,7 @@ class CatmullRom : public Curve {
 				ts.push_back(knot);
 			}
 		}
+
 		vectorize();
 	}	vec3 firstPoint(int i) {		return (cps[i + 1] - cps[i]) / (ts[i + 1] - ts[i]);	}	vec3 lastPoint(int i) {		return (cps[i] - cps[i - 1]) / (ts[i] - ts[i - 1]);	}	vec3 middlePoint(int i) {		return ((1-tension)/2)			 * ((cps[i + 1] - cps[i]) / (ts[i + 1] - ts[i]) 			 + (cps[i] - cps[i - 1]) / (ts[i] - ts[i - 1]));	}
 	vec3 r(float t) override {
@@ -409,11 +410,11 @@ void onInitialization() {
 	bezier = new Bezier();
 	catmullrom = new CatmullRom();
 
-	curve = catmullrom;
-	curve->AddControlPoint(vec3(-5, 10, 15));
-	curve->AddControlPoint(vec3(0, 8, 15));
+	/*curve = catmullrom;
+	curve->AddControlPoint(vec3(5, 5, 1));*/
+	/*curve->AddControlPoint(vec3(0, 8, 15));
 	curve->AddControlPoint(vec3(5, 0, 15));
-	curve->AddControlPoint(vec3(-5, -5, 15));
+	curve->AddControlPoint(vec3(-5, -5, 15));*/
 
 	// create program for the GPU
 	gpuProgram.create(vertexSource, fragmentSource, "outColor");
@@ -465,11 +466,13 @@ void onKeyboard(unsigned char key, int pX, int pY) {
 		}
 		break;
 	case 'z':
-		camera->zoom(1.0f / 1.1f);
+		camera->zoom(1.1f);
+		//curve->printTranslated();
 		glutPostRedisplay();
 		break;
 	case 'Z':
-		camera->zoom(1.1f);
+		camera->zoom(1.0f / 1.1f);
+		//curve->printTranslated();
 		glutPostRedisplay();
 		break;
 	case 'p':
@@ -494,7 +497,7 @@ void onMouseMotion(int pX, int pY) {	// pX, pY are the pixel coordinates of the 
 	float cY = 1.0f - 2.0f * pY / windowHeight;
 
 	if (moveMode == ENABLED) {
-		curve->moveCP(camera->invP(vec3(cX, cY, 1)));
+		curve->moveCP(camera->inverseVP(vec3(cX, cY, 1)));
 		glutPostRedisplay();
 	}
 }
@@ -510,26 +513,26 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 		{
 		case LAGRANGE:
 			if (button == GLUT_LEFT_BUTTON) {
-				lagrange->AddControlPoint(camera->invP(vec3(cX, cY, 1)));
+				lagrange->AddControlPoint(camera->inverseVP(vec3(cX, cY, 1)));
 				glutPostRedisplay();
 			}
 			break;
 		case BEZIER:
 			if (button == GLUT_LEFT_BUTTON) {
-				bezier->AddControlPoint(camera->invP(vec3(cX, cY, 1)));
+				bezier->AddControlPoint(camera->inverseVP(vec3(cX, cY, 1)));
 				glutPostRedisplay();
 			}
 			break;
 		case CATMULLROM:
 			if (button == GLUT_LEFT_BUTTON) {
-				catmullrom->AddControlPoint(camera->invP(vec3(cX, cY, 1)));
+				catmullrom->AddControlPoint(camera->inverseVP(vec3(cX, cY, 1)));
 				glutPostRedisplay();
 			}
 			break;
 		}
 	}
 	if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
-		curve->selectPoint(camera->invP(vec3(cX, cY, 1)));
+		curve->selectPoint(camera->inverseVP(vec3(cX, cY, 1)));
 		moveMode = ENABLED;
 	}
 	if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP) {

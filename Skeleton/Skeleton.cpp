@@ -42,7 +42,7 @@ const char * const vertexSource = R"(
 	precision highp float;		// normal floats, makes no difference on desktop computers
 
 	uniform mat4 VP;			// uniform variable, the Model-View-Projection transformation matrix
-	layout(location = 0) in vec3 cp;	// Varying input: vp = control point is expected in attrib array 0
+	layout(location = 0) in vec3 cp;	// Varying input: cp = control point is expected in attrib array 0
 
 	void main() {
 		gl_Position = vec4(cp.x, cp.y, cp.z, 1) * VP;		// transform vp from modeling space to normalized device space
@@ -88,11 +88,11 @@ public:
 	}
 
 	void V() {
-		float ratio = size / (float)30;
+		float ratio = size / 30.0f;
 		viewM = { ratio, 0, 0, 0,
 				  0, ratio, 0, 0,
 				  0, 0, 1, 0,
-				  cam.x, cam.y, cam.z, 1 };
+				  cam.x, 0, 0, 1 };
 		//cout << viewM[0][0] << " " << viewM[1][1] << " " << viewM[2][2] << endl;
 	}
 
@@ -122,9 +122,23 @@ public:
 		return vec3(wCursorPos.x, wCursorPos.y, wCursorPos.z);
 	}
 
+	vec3 inverseVP(vec3 cursorpos) {
+		float pRatio = size / 2;
+		mat4 projMinv = { pRatio, 0, 0, 0,
+						  0, pRatio, 0, 0,
+						  0, 0, pRatio, 0,
+						  0, 0, 0, 1 };
+
+		float vRatio = 30.0f / size;
+		mat4 viewMinv = { vRatio, 0, 0, 0,
+						 0, vRatio, 0, 0,
+						 0, 0, vRatio, 0,
+						 0, 0, 0, 0 }; // ezt kiszamolni
+	}
+
 	void pan(int panvalue) {
 		cam.x += panvalue;
-		cout << cam.x << endl;
+		//cout << cam.x << endl;
 		V(); uploadMx();
 	}
 
@@ -343,27 +357,27 @@ class CatmullRom : public Curve {
 						v1 = middlePoint(i + 1);
 					}
 					else if (i < 1) {
-						v0 = firstPoint(i);
+						v0 = 0;// firstPoint(i);
 						v1 = middlePoint(i + 1);
 					}
 					else if (i > cps.size() - 3) {
 						v0 = middlePoint(i);
-						v1 = lastPoint(i + 1);
+						v1 = 0;//lastPoint(i + 1);
 					}
 				}
 				else if (cps.size() == 3) {
 					if (i == 0) {
-						v0 = firstPoint(i);
+						v0 = 0;//firstPoint(i);
 						v1 = middlePoint(i + 1);
 					}
 					else if (i == 1) {
 						v0 = middlePoint(i);
-						v1 = lastPoint(i + 1);
+						v1 = 0; // lastPoint(i + 1);
 					}
 				}
 				else if (cps.size() == 2) {
-					v0 = firstPoint(i);
-					v1 = lastPoint(i + 1);
+					v0 = 0;// firstPoint(i);
+					v1 = 0;// lastPoint(i + 1);
 				}
 				return Hermite(cps[i], v0, ts[i], cps[i + 1], v1, ts[i + 1], t);
 			}

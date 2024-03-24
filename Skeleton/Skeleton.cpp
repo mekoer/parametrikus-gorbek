@@ -147,10 +147,10 @@ public:
 	}
 
 	vec3 inverseVP(vec3 cursorpos) const {
-		cout << invVP[0][0] << " " << invVP[1][1] << " " << invVP[2][2] << " " << invVP[3][0] << endl;
+		//cout << invVP[0][0] << " " << invVP[1][1] << " " << invVP[2][2] << " " << invVP[3][0] << endl;
 		
 		vec4 wC = vec4(cursorpos.x, cursorpos.y, cursorpos.z, 1) * invVP;
-		cout << wC.x << " " << wC.y << " " << endl << endl;
+		//cout << wC.x << " " << wC.y << " " << endl << endl;
 		return vec3(wC.x, wC.y, wC.z);
 	}
 
@@ -197,7 +197,7 @@ public:
 
 	void selectPoint(vec3 cursor) {
 		for (vec3& vertex : cps) {
-			if (fabs(length(cursor - vertex)) <= 0.15) {
+			if (fabs(length(cursor - vertex)) <= 0.1f) {
 				selectedPoint = &vertex;
 			}
 		}
@@ -216,7 +216,9 @@ public:
 		}
 	}
 
-	virtual vec3 r(float t);
+	virtual void AddControlPoint(vec3 cp) = 0;
+	virtual void setTension(float tau) = 0;
+	virtual vec3 r(float t) = 0;
 
 	void vectorize() {
 		curveVertices.clear();
@@ -228,13 +230,9 @@ public:
 		glutPostRedisplay();
 	}
 
-	virtual void AddControlPoint(vec3 cp) { return; }
-
 	void del() {
 		cps.clear(); curveVertices.clear(); selectedPoint = nullptr;
 	}
-
-	virtual void setTension(float tau) { return; }
 
 	void Draw() {
 		glBindVertexArray(vaoSpl);
@@ -277,7 +275,6 @@ public:
 		else {
 			float fullDist = 0;
 			for (int i = 1; i < cps.size(); i++) {
-				vec3 vector = cps[i] - cps[i - 1];
 				fullDist += length(cps[i] - cps[i - 1]);
 			}
 
@@ -300,14 +297,20 @@ public:
 		}
 		return rt;
 	}
+
+	void setTension(float tau) override {
+		return;
+	}
 };
 
 class Bezier : public Curve {
 	float B(int i, float t) {
 		int n = cps.size() - 1; // n+1 pts!
 		float choose = 1;
-		for (int j = 1; j <= i; j++) choose *= (float)(n - j + 1) / j;
-		return choose * powf(t, i) * powf(1 - t, n - i);
+		for (int j = 1; j <= i; j++) {
+			choose *= (float)(n - j + 1) / j;
+		}
+		return choose * powf(t, i) * powf(1.0f - t, n - i);
 	}
 public:
 	Bezier() : Curve() {}
@@ -319,9 +322,13 @@ public:
 	vec3 r(float t) override {
 		vec3 rt(0, 0, 0);
 		for (int i = 0; i < cps.size(); i++) {
-			rt = rt + (cps[i] * B(i, t));
+			rt = rt + cps[i] * B(i, t);
 		}
 		return rt;
+	}
+
+	void setTension(float tau) override {
+		return;
 	}
 };
 
@@ -349,7 +356,6 @@ class CatmullRom : public Curve {
 		else {
 			float fullDist = 0;
 			for (int i = 1; i < cps.size(); i++) {
-				vec3 vector = cps[i] - cps[i - 1];
 				fullDist += length(cps[i] - cps[i - 1]);
 			}
 
@@ -369,48 +375,24 @@ class CatmullRom : public Curve {
 		for (int i = 0; i < cps.size() - 1; i++) {
 			if (ts[i] <= t && t <= ts[i + 1]) {
 				vec3 v0, v1;
-
-				if (i != 0 && i != cps.size() - 2) {
-					v0 = middlePoint(i);
-					v1 = middlePoint(i + 1);
-				}
-				else if (i == 0) {
+				if (cps.size() <= 2) {
 					v0 = firstPoint(i);
-					v1 = middlePoint(i + 1);
-				}
-				else if (i == cps.size() - 2) {
-					v0 = middlePoint(i);
 					v1 = lastPoint(i + 1);
 				}
-
-				//if (cps.size() > 3) {
-				//	if (i >= 1 && i <= cps.size() - 3) {
-				//		v0 = middlePoint(i);
-				//		v1 = middlePoint(i + 1);
-				//	}
-				//	else if (i < 1) {
-				//		v0 = 0;// firstPoint(i);
-				//		v1 = middlePoint(i + 1);
-				//	}
-				//	else if (i > cps.size() - 3) {
-				//		v0 = middlePoint(i);
-				//		v1 = 0;//lastPoint(i + 1);
-				//	}
-				//}
-				//else if (cps.size() == 3) {
-				//	if (i == 0) {
-				//		v0 = 0;//firstPoint(i);
-				//		v1 = middlePoint(i + 1);
-				//	}
-				//	else if (i == 1) {
-				//		v0 = middlePoint(i);
-				//		v1 = 0; // lastPoint(i + 1);
-				//	}
-				//}
-				//else if (cps.size() == 2) {
-				//	v0 = 0;// firstPoint(i);
-				//	v1 = 0;// lastPoint(i + 1);
-				//}
+				else {
+					if (i > 0 && i < cps.size() - 2) {
+						v0 = middlePoint(i);
+						v1 = middlePoint(i + 1);
+					}
+					else if (i == 0) {
+						v0 = firstPoint(i);
+						v1 = middlePoint(i + 1);
+					}
+					else if (i == cps.size() - 2) {
+						v0 = middlePoint(i);
+						v1 = lastPoint(i + 1);
+					}
+				}
 				return Hermite(cps[i], v0, ts[i], cps[i + 1], v1, ts[i + 1], t);
 			}
 		}
@@ -435,17 +417,19 @@ void onInitialization() {
 	glLineWidth(2);
 	glPointSize(10);
 
-	curve = new Curve();
+	//curve = new Curve();
 	camera = new Camera();
 	lagrange = new Lagrange();
 	bezier = new Bezier();
 	catmullrom = new CatmullRom();
 
-	/*curve = catmullrom;
-	curve->AddControlPoint(vec3(5, 5, 1));*/
-	/*curve->AddControlPoint(vec3(0, 8, 15));
-	curve->AddControlPoint(vec3(5, 0, 15));
-	curve->AddControlPoint(vec3(-5, -5, 15));*/
+	curve = bezier;
+
+	
+	curve->AddControlPoint(vec3(5, 0, 1));
+	curve->AddControlPoint(vec3(10, 4, 1));
+	curve->AddControlPoint(vec3(10, 6, 1));
+	curve->AddControlPoint(vec3(5, 10, 1));
 
 	// create program for the GPU
 	gpuProgram.create(vertexSource, fragmentSource, "outColor");

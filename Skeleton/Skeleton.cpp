@@ -88,6 +88,8 @@ public:
 	Camera() {
 		cam = vec3(0, 0, 0);
 		wsize = 30.0f;
+		V(); P();
+		uploadMx();
 	}
 
 	void V() {
@@ -423,13 +425,13 @@ void onInitialization() {
 	bezier = new Bezier();
 	catmullrom = new CatmullRom();
 
-	curve = bezier;
+	curve = lagrange;
 
 	
-	curve->AddControlPoint(vec3(5, 0, 1));
+	/*curve->AddControlPoint(vec3(5, 0, 1));
 	curve->AddControlPoint(vec3(10, 4, 1));
 	curve->AddControlPoint(vec3(10, 6, 1));
-	curve->AddControlPoint(vec3(5, 10, 1));
+	curve->AddControlPoint(vec3(5, 10, 1));*/
 
 	// create program for the GPU
 	gpuProgram.create(vertexSource, fragmentSource, "outColor");
@@ -453,18 +455,21 @@ void onKeyboard(unsigned char key, int pX, int pY) {
 	switch (key)
 	{
 	case 'l':
+		cout << "lagrange" << endl;
 		curve->del();
 		curve = lagrange;
 		glutPostRedisplay();
 		curveMode = LAGRANGE;
 		break;
 	case 'b':
+		cout << "bezier\n";
 		curve->del();
 		curve = bezier;
 		glutPostRedisplay();
 		curveMode = BEZIER;
 		break;
 	case 'c':
+		cout << "catmull\n";
 		curve->del();
 		curve = catmullrom;
 		glutPostRedisplay();
@@ -472,29 +477,33 @@ void onKeyboard(unsigned char key, int pX, int pY) {
 		break;
 	case 't':
 		if (curveMode == CATMULLROM) {
+			cout << "-t\n";
 			curve->setTension(-0.1f);
 		}
 		break;
 	case 'T':
 		if (curveMode == CATMULLROM) {
+			cout << "+t\n";
 			curve->setTension(0.1f);
 		}
 		break;
 	case 'z':
+		cout << "zoom *1.1\n";
 		camera->zoom(1.1f);
-		//curve->printTranslated();
 		glutPostRedisplay();
 		break;
 	case 'Z':
+		cout << "zoom *1/1.1\n";
 		camera->zoom(1.0f / 1.1f);
-		//curve->printTranslated();
 		glutPostRedisplay();
 		break;
 	case 'p':
+		cout << "pan jobb\n";
 		camera->pan(1);
 		glutPostRedisplay();
 		break;
 	case 'P':
+		cout << "pan bal\n";
 		camera->pan(-1);
 		glutPostRedisplay();
 		break;
@@ -513,6 +522,7 @@ void onMouseMotion(int pX, int pY) {	// pX, pY are the pixel coordinates of the 
 
 	if (moveMode == ENABLED) {
 		curve->moveCP(camera->inverseVP(vec3(cX, cY, 1)));
+		cout << "move point\n";
 		glutPostRedisplay();
 	}
 }
@@ -529,18 +539,24 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 		case LAGRANGE:
 			if (button == GLUT_LEFT_BUTTON) {
 				lagrange->AddControlPoint(camera->inverseVP(vec3(cX, cY, 1)));
+				vec3 debug = camera->inverseVP(vec3(cX, cY, 1));
+				cout << "add lagrange point: " << debug.x << " " << debug.y << endl;
 				glutPostRedisplay();
 			}
 			break;
 		case BEZIER:
 			if (button == GLUT_LEFT_BUTTON) {
 				bezier->AddControlPoint(camera->inverseVP(vec3(cX, cY, 1)));
+				vec3 debug = camera->inverseVP(vec3(cX, cY, 1));
+				cout << "add bezier point: " << debug.x << " " << debug.y << endl;
 				glutPostRedisplay();
 			}
 			break;
 		case CATMULLROM:
 			if (button == GLUT_LEFT_BUTTON) {
 				catmullrom->AddControlPoint(camera->inverseVP(vec3(cX, cY, 1)));
+				vec3 debug = camera->inverseVP(vec3(cX, cY, 1));
+				cout << "add cmr point: " << debug.x << " " << debug.y << endl;
 				glutPostRedisplay();
 			}
 			break;
@@ -548,10 +564,12 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 	}
 	if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
 		curve->selectPoint(camera->inverseVP(vec3(cX, cY, 1)));
+		cout << "grab point\n";
 		moveMode = ENABLED;
 	}
 	if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP) {
 		curve->deselectCP();
+		cout << "release point\n";
 		moveMode = DISABLED;
 	}
 }

@@ -92,10 +92,18 @@ public:
 
 	void V() {
 		float ratio = wsize / 30.0f;
-		viewM = { ratio, 0, 0, 0,
-				  0, ratio, 0, 0,
-				  0, 0, 1, 0,
-				  cam.x, 0, 0, 1 };
+		mat4 scale = { ratio, 0, 0, 0,
+					   0, ratio, 0, 0,
+					   0, 0, 1, 0,
+					   0, 0, 0, 1 };
+
+		mat4 trans = { 1, 0, 0, 0,
+						   0, 1, 0, 0,
+						   0, 0, 1, 0,
+						   cam.x, 0, 0, 1
+		};
+
+		viewM = trans * scale;
 		refreshVPinv();
 	}
 
@@ -123,17 +131,26 @@ public:
 		};
 
 		float vRatio = 30.0f / wsize;
-		mat4 invV = { vRatio, 0, 0, 0,
-					  0, vRatio, 0, 0,
-					  0, 0, 1, 0,
-					  -1*cam.x, 0, 0, 1
+		mat4 invScale = { vRatio, 0, 0, 0,
+						  0, vRatio, 0, 0,
+						  0, 0, 1, 0,
+						  0, 0, 0, 1
 		};
 
-		invVP = invP * invV;
+		mat4 invTrans = { 1, 0, 0, 0,
+						  0, 1, 0, 0,
+						  0, 0, 1, 0,
+						  -1*cam.x, 0, 0, 1
+		};
+
+		invVP = invP * invScale * invTrans;
 	}
 
 	vec3 inverseVP(vec3 cursorpos) const {
+		cout << invVP[0][0] << " " << invVP[1][1] << " " << invVP[2][2] << " " << invVP[3][0] << endl;
+		
 		vec4 wC = vec4(cursorpos.x, cursorpos.y, cursorpos.z, 1) * invVP;
+		cout << wC.x << " " << wC.y << " " << endl << endl;
 		return vec3(wC.x, wC.y, wC.z);
 	}
 
@@ -290,7 +307,7 @@ class Bezier : public Curve {
 		int n = cps.size() - 1; // n+1 pts!
 		float choose = 1;
 		for (int j = 1; j <= i; j++) choose *= (float)(n - j + 1) / j;
-		return choose * pow(t, i) * pow(1 - t, n - i);
+		return choose * powf(t, i) * powf(1 - t, n - i);
 	}
 public:
 	Bezier() : Curve() {}
@@ -316,10 +333,10 @@ class CatmullRom : public Curve {
 		float deltat = t1 - t0;
 		vec3 a0 = p0;
 		vec3 a1 = v0;
-		vec3 a2 = ((3 * (p1 - p0)) / (pow(deltat, 2))) - ((v1 + 2 * v0) / deltat);
-		vec3 a3 = ((2 * (p0 - p1)) / (pow(deltat, 3))) + (v1 + v0) / (pow(deltat, 2));
+		vec3 a2 = ((3 * (p1 - p0)) / (powf(deltat, 2))) - ((v1 + 2 * v0) / deltat);
+		vec3 a3 = ((2 * (p0 - p1)) / (powf(deltat, 3))) + (v1 + v0) / (powf(deltat, 2));
 		deltat = t - t0;
-		return (a3 * pow(deltat, 3)) + (a2 * pow(deltat, 2)) + (a1 * deltat) + a0;
+		return (a3 * powf(deltat, 3)) + (a2 * powf(deltat, 2)) + (a1 * deltat) + a0;
 	}public:	void AddControlPoint(vec3 cp) override {
 		ts.clear();
 		ts.push_back(0);
@@ -352,34 +369,48 @@ class CatmullRom : public Curve {
 		for (int i = 0; i < cps.size() - 1; i++) {
 			if (ts[i] <= t && t <= ts[i + 1]) {
 				vec3 v0, v1;
-				if (cps.size() > 3) {
-					if (i >= 1 && i <= cps.size() - 3) {
-						v0 = middlePoint(i);
-						v1 = middlePoint(i + 1);
-					}
-					else if (i < 1) {
-						v0 = 0;// firstPoint(i);
-						v1 = middlePoint(i + 1);
-					}
-					else if (i > cps.size() - 3) {
-						v0 = middlePoint(i);
-						v1 = 0;//lastPoint(i + 1);
-					}
+
+				if (i != 0 && i != cps.size() - 2) {
+					v0 = middlePoint(i);
+					v1 = middlePoint(i + 1);
 				}
-				else if (cps.size() == 3) {
-					if (i == 0) {
-						v0 = 0;//firstPoint(i);
-						v1 = middlePoint(i + 1);
-					}
-					else if (i == 1) {
-						v0 = middlePoint(i);
-						v1 = 0; // lastPoint(i + 1);
-					}
+				else if (i == 0) {
+					v0 = firstPoint(i);
+					v1 = middlePoint(i + 1);
 				}
-				else if (cps.size() == 2) {
-					v0 = 0;// firstPoint(i);
-					v1 = 0;// lastPoint(i + 1);
+				else if (i == cps.size() - 2) {
+					v0 = middlePoint(i);
+					v1 = lastPoint(i + 1);
 				}
+
+				//if (cps.size() > 3) {
+				//	if (i >= 1 && i <= cps.size() - 3) {
+				//		v0 = middlePoint(i);
+				//		v1 = middlePoint(i + 1);
+				//	}
+				//	else if (i < 1) {
+				//		v0 = 0;// firstPoint(i);
+				//		v1 = middlePoint(i + 1);
+				//	}
+				//	else if (i > cps.size() - 3) {
+				//		v0 = middlePoint(i);
+				//		v1 = 0;//lastPoint(i + 1);
+				//	}
+				//}
+				//else if (cps.size() == 3) {
+				//	if (i == 0) {
+				//		v0 = 0;//firstPoint(i);
+				//		v1 = middlePoint(i + 1);
+				//	}
+				//	else if (i == 1) {
+				//		v0 = middlePoint(i);
+				//		v1 = 0; // lastPoint(i + 1);
+				//	}
+				//}
+				//else if (cps.size() == 2) {
+				//	v0 = 0;// firstPoint(i);
+				//	v1 = 0;// lastPoint(i + 1);
+				//}
 				return Hermite(cps[i], v0, ts[i], cps[i + 1], v1, ts[i + 1], t);
 			}
 		}

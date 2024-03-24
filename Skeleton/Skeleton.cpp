@@ -31,6 +31,14 @@
 // Tudomasul veszem, hogy a forrasmegjeloles kotelmenek megsertese eseten a hazifeladatra adhato pontokat
 // negativ elojellel szamoljak el es ezzel parhuzamosan eljaras is indul velem szemben.
 //=============================================================================================
+
+//
+// szándékosan nem másoltam ki egyik helyrõl sem semmit, de átnéztem az alábbi anyagokat a
+// feladat elkészítése közben
+// https://www.youtube.com/watch?v=XPuOS39qadE
+// https://cg.iit.bme.hu/portal/sites/default/files/oktatott%20t%C3%A1rgyak/sz%C3%A1m%C3%ADt%C3%B3g%C3%A9pes%20grafika/geometriai%20modellez%C3%A9s/bezier.cpp
+//
+
 #include "framework.h"
 #include "iostream"
 
@@ -149,10 +157,7 @@ public:
 	}
 
 	vec3 inverseVP(vec3 cursorpos) const {
-		//cout << invVP[0][0] << " " << invVP[1][1] << " " << invVP[2][2] << " " << invVP[3][0] << endl;
-		
 		vec4 wC = vec4(cursorpos.x, cursorpos.y, cursorpos.z, 1) * invVP;
-		//cout << wC.x << " " << wC.y << " " << endl << endl;
 		return vec3(wC.x, wC.y, wC.z);
 	}
 
@@ -173,7 +178,7 @@ Camera* camera;
 
 class Curve {
 protected:
-	unsigned int vaoCP, vboCP, vaoSpl, vboSpl;
+	unsigned int vaoCP, vboCP, vaoCurve, vboCurve;
 	vector<vec3> cps;
 	vector<vec3> curveVertices;
 	vec3* selectedPoint;
@@ -187,11 +192,11 @@ public:
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
 		
 
-		glGenVertexArrays(1, &vaoSpl);
-		glBindVertexArray(vaoSpl);
+		glGenVertexArrays(1, &vaoCurve);
+		glBindVertexArray(vaoCurve);
 		glEnableVertexAttribArray(0);
-		glGenBuffers(1, &vboSpl);
-		glBindBuffer(GL_ARRAY_BUFFER, vboSpl);
+		glGenBuffers(1, &vboCurve);
+		glBindBuffer(GL_ARRAY_BUFFER, vboCurve);
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
 
 		selectedPoint = nullptr;
@@ -237,8 +242,8 @@ public:
 	}
 
 	void Draw() {
-		glBindVertexArray(vaoSpl);
-		glBindBuffer(GL_ARRAY_BUFFER, vboSpl);
+		glBindVertexArray(vaoCurve);
+		glBindBuffer(GL_ARRAY_BUFFER, vboCurve);
 		glBufferData(GL_ARRAY_BUFFER, curveVertices.size() * sizeof(vec3), &curveVertices[0], GL_DYNAMIC_DRAW);
 		gpuProgram.setUniform(vec3(1.0f, 1.0f, 0.0f), "color");
 		glDrawArrays(GL_LINE_STRIP, 0, curveVertices.size());
@@ -252,7 +257,7 @@ public:
 };
 
 class Lagrange : public Curve {
-	vector<float> ts; // knots
+	vector<float> ts;
 
 	float L(int i, float t) {
 		float Li = 1.0f;
@@ -307,7 +312,7 @@ public:
 
 class Bezier : public Curve {
 	float B(int i, float t) {
-		int n = cps.size() - 1; // n+1 pts!
+		int n = cps.size() - 1;
 		float choose = 1;
 		for (int j = 1; j <= i; j++) {
 			choose *= (float)(n - j + 1) / j;
@@ -411,15 +416,12 @@ Lagrange* lagrange;
 Bezier* bezier;
 CatmullRom* catmullrom;
 
-
-// Initialization, create an OpenGL context
 void onInitialization() {
 	glViewport(0, 0, windowWidth, windowHeight);
 
 	glLineWidth(2);
 	glPointSize(10);
 
-	//curve = new Curve();
 	camera = new Camera();
 	lagrange = new Lagrange();
 	bezier = new Bezier();
@@ -427,13 +429,6 @@ void onInitialization() {
 
 	curve = lagrange;
 
-	
-	/*curve->AddControlPoint(vec3(5, 0, 1));
-	curve->AddControlPoint(vec3(10, 4, 1));
-	curve->AddControlPoint(vec3(10, 6, 1));
-	curve->AddControlPoint(vec3(5, 10, 1));*/
-
-	// create program for the GPU
 	gpuProgram.create(vertexSource, fragmentSource, "outColor");
 }
 
@@ -455,21 +450,18 @@ void onKeyboard(unsigned char key, int pX, int pY) {
 	switch (key)
 	{
 	case 'l':
-		cout << "lagrange" << endl;
 		curve->del();
 		curve = lagrange;
 		glutPostRedisplay();
 		curveMode = LAGRANGE;
 		break;
 	case 'b':
-		cout << "bezier\n";
 		curve->del();
 		curve = bezier;
 		glutPostRedisplay();
 		curveMode = BEZIER;
 		break;
 	case 'c':
-		cout << "catmull\n";
 		curve->del();
 		curve = catmullrom;
 		glutPostRedisplay();
@@ -477,33 +469,27 @@ void onKeyboard(unsigned char key, int pX, int pY) {
 		break;
 	case 't':
 		if (curveMode == CATMULLROM) {
-			cout << "-t\n";
 			curve->setTension(-0.1f);
 		}
 		break;
 	case 'T':
 		if (curveMode == CATMULLROM) {
-			cout << "+t\n";
 			curve->setTension(0.1f);
 		}
 		break;
 	case 'z':
-		cout << "zoom *1.1\n";
 		camera->zoom(1.1f);
 		glutPostRedisplay();
 		break;
 	case 'Z':
-		cout << "zoom *1/1.1\n";
 		camera->zoom(1.0f / 1.1f);
 		glutPostRedisplay();
 		break;
 	case 'p':
-		cout << "pan jobb\n";
 		camera->pan(1);
 		glutPostRedisplay();
 		break;
 	case 'P':
-		cout << "pan bal\n";
 		camera->pan(-1);
 		glutPostRedisplay();
 		break;
@@ -522,7 +508,6 @@ void onMouseMotion(int pX, int pY) {	// pX, pY are the pixel coordinates of the 
 
 	if (moveMode == ENABLED) {
 		curve->moveCP(camera->inverseVP(vec3(cX, cY, 1)));
-		cout << "move point\n";
 		glutPostRedisplay();
 	}
 }
@@ -539,24 +524,18 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 		case LAGRANGE:
 			if (button == GLUT_LEFT_BUTTON) {
 				lagrange->AddControlPoint(camera->inverseVP(vec3(cX, cY, 1)));
-				vec3 debug = camera->inverseVP(vec3(cX, cY, 1));
-				cout << "add lagrange point: " << debug.x << " " << debug.y << endl;
 				glutPostRedisplay();
 			}
 			break;
 		case BEZIER:
 			if (button == GLUT_LEFT_BUTTON) {
 				bezier->AddControlPoint(camera->inverseVP(vec3(cX, cY, 1)));
-				vec3 debug = camera->inverseVP(vec3(cX, cY, 1));
-				cout << "add bezier point: " << debug.x << " " << debug.y << endl;
 				glutPostRedisplay();
 			}
 			break;
 		case CATMULLROM:
 			if (button == GLUT_LEFT_BUTTON) {
 				catmullrom->AddControlPoint(camera->inverseVP(vec3(cX, cY, 1)));
-				vec3 debug = camera->inverseVP(vec3(cX, cY, 1));
-				cout << "add cmr point: " << debug.x << " " << debug.y << endl;
 				glutPostRedisplay();
 			}
 			break;
@@ -564,12 +543,10 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 	}
 	if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
 		curve->selectPoint(camera->inverseVP(vec3(cX, cY, 1)));
-		cout << "grab point\n";
 		moveMode = ENABLED;
 	}
 	if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP) {
 		curve->deselectCP();
-		cout << "release point\n";
 		moveMode = DISABLED;
 	}
 }
